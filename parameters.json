@@ -2,7 +2,9 @@
 "project_path": "./",
 "imagenet_weights_path": "imagenet_weights.npy",
 "ucf101_weights_path": "ucf101_weights.npy",
-
+"subjects": ["Ahmad", "Alireza", "Carlos", "Rahul", "Yin", "Shaghayegh"],
+"data_files_folder": "gaze+TrainTestlist/",
+"images_folder": "gaze_plus_images/",
 "width": 224,
 "height": 224,
 "channels": 3,

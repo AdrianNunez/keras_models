@@ -1,14 +1,32 @@
+import sys
 import numpy as np
 # Always fix the randomness seed value
 from numpy import seed
 seed(7)
+import glob
+from utils import get_classes
+from sklearn.model_selection import StratifiedShuffleSplit
 
-def load_images(mode, parameters):
-    for actor in actors:
+def load_images(mode, test_subject, parameters):
+    subjects = parameters['subjects']
+    data_files_folder = parameters['data_files_folder']
+    images_folder = parameters['images_folder']
+    
+    dic = dict()
+    for actor in subjects:
         dic[actor] = dict()
-    class_dict = get_classes()
-    stacks_per_class = dict()
+    
+    if mode == 'train' or mode == 'val':
+        data_file = data_files_folder + '/train_{}.txt'.format(test_subject)
+    elif mode == 'test':
+        data_file = data_files_folder + '/test_{}.txt'.format(test_subject)
+    else:
+        print('No valid mode to load data. Options: train, val, test.')
+        sys.exit()
+        
+    # Load video folders and their respective classes to memory
     folders, labels = [], []
+    class_dict = get_classes()
     with open(data_file, 'r') as f:
         content = f.readlines()
         for i in range(len(content)):
@@ -16,15 +34,19 @@ def load_images(mode, parameters):
             folders.append(folder)
             class_name = folder[folder.find('/')+1:folder.rfind('/')]
             labels.append(class_dict[class_name])
-            x_frames = glob.glob(data_folder + folder + '/flow_x*')  
-            # Compute number of stacks inside current folder
-            rest = len(x_frames) % L
-            instances = (len(x_frames) - rest) // L
-            if rest > 0: instances += 1
-            #stacks_per_class[class_dict[label]] += instances
-    sss = StratifiedShuffleSplit(n_splits=1, test_size=0.1, random_state=0)
-    indices = sss.split(folders, labels)
-    val_index = indices.next()[1]
+       
+    # Stratify the dataset in train to get a validation partition:
+    # i.e., get a subset of the training set with the same class distsribution
+    if mode == 'train':
+        sss = StratifiedShuffleSplit(n_splits=1, test_size=0.1, random_state=0)
+        indices = sss.split(folders, labels)
+        val_index = indices.next()[1]
+        
+    for folder, label in zip(folders, labels):
+        class_name = folder[folder.find('/')+1:folder.rfind('/')]
+        actor = folder[:folder.find('/')]
+    
+    
     # Load the data depending on the mode parameter
     with open(data_file, 'r') as f:
         content = f.readlines()
@@ -63,30 +85,44 @@ def load_images(mode, parameters):
     cnt = Counter()
     folders_in_class = dict()
     class_of_folder = dict()
-    nb_total_stacks = 0
+    nb_total_images = 0
     
+    class_names = get_classes_names()
+    durations_difficult_classes = dict()
+    for c in [19,21,22,31,39,42]:
+        durations_difficult_classes[class_names[c-1]] = []
+    rest = dict()
     for folder, label in zip(X, Y):
-        x_frames = glob.glob(folder + '/flow_x*')
-        # Count the number of stacks inside a folder/video
-        rest = len(x_frames) % L
-        nb_stacks = len(x_frames) // L
-        if rest > 0:
-            nb_stacks += 1
-        nb_total_stacks += nb_stacks
+        frames = glob.glob(folder + '/frame*')
+        # Count the number of images inside a folder/video
+        nb_images = len(frames)
+        nb_total_images += nb_images
         
         temp = folder[:folder.rfind('/')]
         class_name = temp[temp.rfind('/')+1:]
+        if class_name in durations_difficult_classes:
+            durations_difficult_classes[class_name].append(nb_images)
+        if class_name not in rest:
+            rest[class_name] = []
+        rest[class_name].append(nb_images)
         # Store the folders by class
         if not folders_in_class.has_key(class_name):  
             folders_in_class[class_name] = []
         folders_in_class[class_name].append(folder)
         # Store the number of stacks per class (for data replication in training time)
         if not cnt.has_key(class_name):  
-            cnt[class_name] = nb_stacks
+            cnt[class_name] = nb_images
         else:
-            cnt[class_name] += nb_stacks
+            cnt[class_name] += nb_images
         # Store the class of a given folder name
         class_of_folder[folder] = label
+        
+    #for c in [19,21,22,31,39,42]:
+    #    name = class_names[c-1]
+    #    print(name, len(durations_difficult_classes[name]), np.mean(durations_difficult_classes[name]), np.std(durations_difficult_classes[name]))
+    video_summary = dict()
+    for k in rest.keys():
+        video_summary[k] = [len(rest[k]), np.mean(rest[k]), np.std(rest[k])]
     
     values = cnt.values()
     values.sort()
@@ -100,171 +136,66 @@ def load_images(mode, parameters):
         perm = np.random.permutation(len(cnt.keys()))
         batches = []
         batch_labels = []
-   
+        batch_labels_video = []
+        video_durations = []
+        
         # p contains a class index, randomized by perm
         for p in np.asarray(folders_in_class.keys())[list(perm)]:         
             folders = folders_in_class[p]
-            stacks_of_class = []
+            images_of_class = []
             labels_of_class = []
+            labels_by_video = []
             for element in folders:
-                x_frames = glob.glob(element + '/flow_x*')
-                y_frames = glob.glob(element + '/flow_y*')       
-                rest = len(x_frames) % L
-                for r in xrange((len(x_frames) - rest) // L):        
-                    # Variables used for random transformations, necessary to do them here to apply the same transformation to the whole stack
-                    dx = np.random.randint(0, resize_shape[0]-image_shape[0])
-                    dy = np.random.randint(0, resize_shape[1]-image_shape[1])
-                    rand = np.random.rand(1)
-                    
-                    i = 0
-                    if mode == 'train':
-                        flow = np.zeros(shape=resize_shape + (2*L,), dtype=np.float32)
-                    else:
-                        flow = np.zeros(shape=image_shape + (2*L,), dtype=np.float32)
-                    for flow_x_file, flow_y_file in zip(x_frames[r*L:(r+1)*L],y_frames[r*L:(r+1)*L]):
-                        img_x = cv2.imread(flow_x_file, cv2.IMREAD_GRAYSCALE)
-                        img_y = cv2.imread(flow_y_file, cv2.IMREAD_GRAYSCALE)
+                frames = glob.glob(element + '/frame*')
+                for i in xrange(len(frames)):        
+                    img = cv2.imread(frames[i])
                         # Resize from original size to resize_shape, then do a random crop
-                        if mode == 'train':
-                            img_x = imresize(img_x, resize_shape, interp='bilinear') 
-                            img_y = imresize(img_y, resize_shape, interp='bilinear') 
+                    if mode == 'train':
+                        img = imresize(img, resize_shape, interp='bilinear') 
                         #img_x = img_x[dx:dx+image_shape[0], dy:dy+image_shape[1]]
                         #img_y = img_y[dx:dx+image_shape[0], dy:dy+image_shape[1]]
                         # Random horizontal mirroring
                         #if mode == 'train' and rand > 0.5:
                         #    img_x = 255 - img_x[:, ::-1]
                         #    img_y = img_y[:, ::-1]
-                        
-                        flow[:,:,2*i] = img_x
-                        flow[:,:,2*i+1] = img_y
-                        i += 1
-                    stacks_of_class.append(flow)
+                    images_of_class.append(img)
                     labels_of_class.append(class_of_folder[element])
-                    
-                # Create a stack with the remaining frames, as they are not enough to create an stack pick the last L optical flow images
-                if rest > 0:
-                     # Variables used for random transformations, necessary to do them here to apply the same transformation to the whole stack
-                    dx = np.random.randint(0, resize_shape[0]-image_shape[0])
-                    dy = np.random.randint(0, resize_shape[1]-image_shape[1])
-                    rand = np.random.rand(1)
-                    
-                    i = 0
-                    if mode == 'train':
-                        flow = np.zeros(shape=resize_shape + (2*L,), dtype=np.float32)
-                    else:
-                        flow = np.zeros(shape=image_shape + (2*L,), dtype=np.float32)
-                    for flow_x_file, flow_y_file in zip(x_frames[-L:],y_frames[-L:]):
-                        img_x = cv2.imread(flow_x_file, cv2.IMREAD_GRAYSCALE)
-                        img_y = cv2.imread(flow_y_file, cv2.IMREAD_GRAYSCALE)
-                        if mode == 'train':
-                            img_x = imresize(img_x, resize_shape, interp='bilinear') 
-                            img_y = imresize(img_y, resize_shape, interp='bilinear')
-                        # Random crop
-                        #img_x = img_x[dx:dx+image_shape[0], dy:dy+image_shape[1]]
-                        #img_y = img_y[dx:dx+image_shape[0], dy:dy+image_shape[1]]
-                        # Random mirror
-                        #if mode == 'train' and rand > 0.5:
-                        #    img_x = 255 - img_x[:, ::-1]
-                        #    img_y = img_y[:, ::-1]
-
-                        flow[:,:,2*i] = img_x
-                        flow[:,:,2*i+1] = img_y
-                        i += 1
-                    stacks_of_class.append(flow)
-                    labels_of_class.append(class_of_folder[element])
+                labels_by_video.append(class_of_folder[element])
+                video_durations.append(len(frames))
             # Data replication: repeat data to get the amount of data in the class with maximum number of samples
             if mode == 'train' and data_replication:
-                temp_x = stacks_of_class
+                temp_x = images_of_class
                 temp_y = labels_of_class
                 if replicate == 'max':
                 # Need to achieve cnt[max_class] samples
-                    while len(stacks_of_class) < cnt[max_class]:    
+                    while len(images_of_class) < cnt[max_class]:    
                         for _x, _y in zip(temp_x, temp_y):
-                            stacks_of_class.append(_x)
+                            images_of_class.append(_x)
                             labels_of_class.append(_y)
-                            if len(stacks_of_class) >= cnt[max_class]:
+                            if len(images_of_class) >= cnt[max_class]:
                                 break
                 elif replicate == 'median':
                     select = np.random.choice(len(temp_x), size=median, replace=True)
-                    stacks_of_class = []
-                    for s in select:
-                        stacks_of_class.append(temp_x[s])
+                    images_of_class = []
                     labels_of_class = []
+                    for s in select:
+                        images_of_class.append(temp_x[s])
                     for s in select:
                         labels_of_class.append(temp_y[s])
                 del temp_x, temp_y
                 gc.collect()
             
             # Copies data to the batches and batch_labels arrays
-            for elem in stacks_of_class:
+            for elem in images_of_class:
                 batches.append(elem)
             for elem in labels_of_class:
                 batch_labels.append(elem)
-            del stacks_of_class, labels_of_class
+            for elem in labels_by_video:
+                batch_labels_video.append(elem)
+            del images_of_class, labels_of_class
             gc.collect()
-        
         stack_size = len(batches)
         num_batches = stack_size // batch_size
         rest = stack_size % batch_size
-            
-        if mode == 'train':
-            # For selecting horizontal components and vertical components of the optical flow stack
-            evens = [n for n in range(20) if n % 2 == 0]
-            #odds = [n for n in range(20) if n % 2 != 0]
-            print('train loaded: {}'.format(stack_size))
-            while True:
-                perm = np.random.permutation(range(stack_size))
-                _x, _y = [], []
-                batches_sent = 0
-                for b in perm:
-                    _x.append(batches[b])
-                    dx = np.random.randint(0, resize_shape[0]-image_shape[0])
-                    dy = np.random.randint(0, resize_shape[1]-image_shape[1])
-                    rand = np.random.rand(1) 
-                    _x[-1] = _x[-1][dx:dx+image_shape[0], dy:dy+image_shape[1],:]
-                    if rand > 0.5:
-                        _x[-1][...,evens] = 255 - _x[-1][...,evens]
-                    #    _x[-1][:,:,odds] = _x[-1][:,::-1,odds]
-                    _y.append(batch_labels[b])
-                    if len(_x) == batch_size:
-                        yield np.asarray(_x) - mean, np.asarray(to_categorical(_y, num_classes))
-                        del _x, _y
-                        gc.collect()
-                        _x, _y = [], []
-                
-                rest = len(perm) % batch_size
-                if rest > 0:
-                    temp = np.random.choice(stack_size, batch_size-rest)
-                    for i in temp:
-                        _x.append(batches[i])
-                        dx = np.random.randint(0, resize_shape[0]-image_shape[0])
-                        dy = np.random.randint(0, resize_shape[1]-image_shape[1])
-                        rand = np.random.rand(1) 
-                        # Random croppping
-                        _x[-1] = _x[-1][dx:dx+image_shape[0], dy:dy+image_shape[1],:]
-                        # Random flipping
-                        if rand > 0.5:
-                            _x[-1][...,evens] = 255 - _x[-1][...,evens]
-                        #    _x[-1][:,:,evens] = 255 - _x[-1][:,::-1,evens]
-                        #    _x[-1][:,:,odds] = _x[-1][:,::-1,odds]
-                        _y.append(batch_labels[i])
-                    yield np.asarray(_x) - mean, np.asarray(to_categorical(_y, num_classes))
-                    del _x, _y
-                    gc.collect()
-        # For the training and validation cases data augmentation is not used
-        else:
-            while True:
-                print('{} loaded: {}'.format(mode, stack_size))
-                rest = 0
-                if stack_size%batch_size > 0:
-                    rest = 1
-                for b in range(num_batches+rest):
-                    up_lim = min((b+1)*batch_size, stack_size)
-                    #_x = []
-                    #for s in range(up_lim-(b*batch_size)):
-                        #dx = np.random.randint(0, resize_shape[0]-image_shape[0])
-                        #dy = np.random.randint(0, resize_shape[1]-image_shape[1])
-                        # Random croppping
-                        #_x.append(batches[b*batch_size+s][dx:dx+image_shape[0], dy:dy+image_shape[1],:])
-                    #yield np.asarray(_x) - mean, np.asarray(to_categorical(batch_labels[b*batch_size:up_lim], num_classes))#, num_batches, int(nb_total_stacks/batch_size), nb_total_stacks, total_stacks_used
-                    yield np.asarray(batches[b*batch_size:up_lim]) - mean, np.asarray(to_categorical(batch_labels[b*batch_size:up_lim], num_classes))    
+        class_labels = class_dict.values()
+        class_labels.sort()

@@ -5,7 +5,7 @@ from numpy import seed
 seed(7)
 import tensorflow as tf
 from keras.models import Model
-from keras.layers import Convolution2D, Lambda, MaxPooling2D, ZeroPadding2D, Flatten, Dense, Dropout, Activation, Concatenate
+from keras.layers import Input, Convolution2D, Lambda, MaxPooling2D, ZeroPadding2D, Flatten, Dense, Dropout, Activation, Concatenate
 
 # This layer normalizes the outputs of a neural network layer. Similar to Batch Normalization layer but deprecated in use.
 def lrn(input, radius=5, alpha=0.0005, beta=0.75, name='LRN', bias=1.0):
@@ -20,7 +20,7 @@ def cnn_m_2048(name, input_shape, keep_prob_1, keep_prob_2=1., num_classes=None,
     
     # BLOCK 2
     padding2 = ZeroPadding2D(padding=(1,1))(pool1)
-    conv2 = Convolution2D(256, 5, 5, subsample=(2,2), border_mode='valid', activation='relu', name='conv2_{}'.format(name))(conv2)
+    conv2 = Convolution2D(256, 5, 5, subsample=(2,2), border_mode='valid', activation='relu', name='conv2_{}'.format(name))(padding2)
     lrn2 = Lambda(lrn)(conv2)
     pool2 = MaxPooling2D((3,3), strides=(2,2), border_mode='same')(lrn2)
     
