@@ -226,18 +226,48 @@ def load_test_image_dataset(parameters, test_subject):
     )   
     return test_set
 
-def batch_generator(mode, parameters, images, stacks, labels, inputs_per_video):
-    nb_inputs = inputs_per_video[-1]
+def batch_generator(mode, parameters, dataset):
+    nb_inputs = dataset['inputs_per_video'][-1]
     nb_classes = parameters['nb_classes']
     L = parameters['L']
+    batch_size = parameters['batch_size']
     
-    perm = np.random.permutation(nb_inputs)
-    for i in xrange(nb_inputs):
-        pos = np.searchsorted(inputs_per_video, perm[i], side='left')
-        pos_stack = perm[i]-pos
-        inner_pos = pos_stack*L + L/2 # for test and validation
-        if mode == 'train':
-            inner_pos = np.random.randint(pos_stack*L,pos_stack*(L+1))
-        yield (images[pos][inner_pos], stacks[pos][pos_stack],
-               to_categorical(labels[pos], nb_classes))
+    while True:
+        perm = np.random.permutation(nb_inputs)
+        batch = []
+        for i in xrange(nb_inputs):
+            pos = np.searchsorted(
+                dataset['inputs_per_video'], perm[i], side='left'
+            )
+            pos_stack = perm[i]-pos
+            inner_pos = pos_stack*L + L/2 # for test and validation
+            if mode == 'train':
+                inner_pos = np.random.randint(pos_stack*L,pos_stack*(L+1))
+            batch.append((dataset['images'][pos][inner_pos],
+                   dataset['stacks'][pos][pos_stack],
+                   to_categorical(dataset['labels'][pos], nb_classes)))
+            if len(batch) == batch_size:
+                yield batch
+                batch = []
+        if mode == 'train' and nb_inputs % batch_size > 0:
+            indices = np.random.choice(
+                range(nb_inputs), nb_inputs % batch_size
+            )
+            for i in indices:
+                pos = np.searchsorted(
+                    dataset['inputs_per_video'], i, side='left'
+                )
+                pos_stack = i-pos
+                inner_pos = pos_stack*L + L/2 # for test and validation
+                if mode == 'train':
+                    inner_pos = np.random.randint(pos_stack*L,pos_stack*(L+1))
+                batch.append((dataset['images'][pos][inner_pos],
+                       dataset['stacks'][pos][pos_stack],
+                       to_categorical(dataset['labels'][pos], nb_classes)))
+                if len(batch) == batch_size:
+                    yield batch
+                    batch = []
+            
+            
+            
     

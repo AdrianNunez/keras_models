@@ -5,6 +5,7 @@ seed(7)
 from keras.optimizers import Adam
 from keras.callbacks import EarlyStopping, ModelCheckpoint
 import json
+import gc
 from sklearn.metrics import confusion_matrix
 
 from cnnm2048 import two_stream_network
@@ -28,24 +29,63 @@ def train(test_subject, parameters):
     model.compile(optimizer=adam, loss='categorical_crossentropy', metrics=metrics[1:])
     
     # Load the dataset
-    (x_train, y_train), (x_val, y_val), (x_test, y_test) = load_image_dataset(parameters, test_subject)
+    training_set, validation_set = load_train_val_image_dataset(parameters, test_subject)
+    nb_inputs_train = training_set['inputs_per_video'][-1]
+    nb_batches_train = nb_inputs_train // batch_size
+    if nb_inputs_train % batch_size > 0:
+        nb_batches_train += 1
     
     # Get the necessary callbacks to train the model
     earlystopping = EarlyStopping(monitor='val_loss', patience=100, verbose=0)    
     modelcheckpoint = ModelCheckpoint(saved_weights_file, monitor='val_loss', save_best_only=True, verbose=0)
     callbacks = [earlystopping, modelcheckpoint]
     
-    # Train the model
-    history = model.fit(x_train, y_train, batch_size=batch_size, nb_epoch=nb_epoch, validation_data=(x_val,y_val), callbacks=callbacks)
+    # Train the model 
+    for e in range(nb_epoch):
+        next_batch_train = batch_generator('train', parameters, training_set)
+        next_batch_val = batch_generator('val', parameters, validation_set)
+        loss_train, acc_train = [], []
+        for b in range(nb_batches_train):
+            image, ofstack, label = next_batch_train.next()
+            loss, accuracy = model.train_on_batch([image, ofstack], label)
+            loss_train.append(loss)
+            acc_train.append(accuracy)
+        preds, gt = [], []
+        for b in range(nb_batches_val):
+            image, ofstack, label = next_batch_val.next()
+            pred = model.predict([image, ofstack], batch_size=batch_size)
+            gt.append(label)
+            preds.append(pred)
+        val_f1 = metrics.f1_score(
+            np.argmax(gt,1), np.argmax(preds,1), average='macro'
+        )
+        val_acc = metrics.accuracy_score(np.argmax(gt,1), np.argmax(preds,1))
+        print('Epoch {} - Train Loss: {}, Train Acc: {} / Val Acc: {},'
+              'Val F1: {}'.format(
+                  e, np.mean(loss_train), np.mean(acc_train), val_acc, val_f1
+                  )
+              )
     
     print('Validation accuracy:', max(history.history['val_acc']))
     print('Validation loss:', min(history.history['val_loss']))
+    del training_set, validation_set
+    gc.collect()
 
+    # Load best model
     model.load_weights(saved_weights_file)
-    yp = model.predict(x_test, batch_size=batch_size, verbose=1)
-    ypreds = np.argmax(yp, axis=1)
-    ytrue = np.argmax(y_test, axis=1)
+
+    # Load the test set and compute metrics and confusion matrix
+    test_set = load_test_image_dataset(parameters, test_subject)
+    next_batch_test = batch_generator('test', parameters, test_set)
+    gt, preds = [], []
+    for i in range(nb_batches_test):
+        image, ofstack, label = next_batch_test.next()
+        pred = model.predict([image, ofstack], batch_size=batch_size)
+        gt.append(label)
+        preds.append(pred)
     
+    ytrue = np.argmax(gt,1)
+    ypreds = np.argmax(preds,1)
     cm = confusion_matrix(ytrue, ypreds)
     title = 'Confusion matrix in test set ({} fold)'.format(test_subject)
     cm_path = '{}cm_{}.pdf'.format(plot_folder, test_subject)
