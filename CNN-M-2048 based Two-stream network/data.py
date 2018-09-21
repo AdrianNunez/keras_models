@@ -1,9 +1,8 @@
 import sys
 import gc
-import numpy as np
-# Always fix the randomness seed value
-from numpy import seed
+from numpy.random import seed
 seed(7)
+import numpy as np
 import glob
 from utils import get_classes
 from sklearn.model_selection import StratifiedShuffleSplit

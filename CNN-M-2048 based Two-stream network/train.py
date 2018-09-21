@@ -1,7 +1,8 @@
-import numpy as np
 # Always fix the randomness seed value
-from numpy import seed
+from numpy.random import seed
 seed(7)
+import numpy as np
+
 from keras.optimizers import Adam
 from keras.callbacks import EarlyStopping, ModelCheckpoint
 import json

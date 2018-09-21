@@ -2,6 +2,8 @@ from sklearn import metrics
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from numpy.random import seed
+seed(7)
 import numpy as np
 from matplotlib.patches import Rectangle
 import itertools
