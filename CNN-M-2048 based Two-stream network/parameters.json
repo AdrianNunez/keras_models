@@ -1,11 +1,12 @@
 {
 "project_path": "./",
 "imagenet_weights_path": "imagenet_weights.npy",
+"saved_weights_file_path": "saved_weights.h5",
 "ucf101_weights_path": "ucf101_weights.npy",
 "subjects": ["Ahmad", "Alireza", "Carlos", "Rahul", "Yin", "Shaghayegh"],
 "data_files_folder": "gaze+TrainTestlist/",
 "images_folder": "gaze_plus_images/",
-
+"plot_folder": "plots/",
 "width": 224,
 "height": 224,
 "channels": 3,
@@ -14,6 +15,9 @@
 "dropout_temporalnet_1": 0.5,
 
 "nb_classes": 44,
+"percentage_of_train_for_validation": 0.1,
+"nb_epoch": 200,
 "learning_rate": 0.001,
+"batch_size": 64,
 "metrics": ["loss", "accuracy"]
 }
