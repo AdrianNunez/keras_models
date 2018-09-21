@@ -5,6 +5,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Rectangle
 import itertools
+import psutil
+
+def show_RAM():
+    values = psutil.virtual_memory()
+    used = values.used / (1024*1024)
+    active = values.active / (1024*1024)
+    print('RAM: {}MB, {}MB'.format(used, active))
 
 def get_classes(ind_file):
     '''
