@@ -18,7 +18,7 @@ def train(test_subject, parameters):
     metrics = parameters['metrics']
     batch_size = parameters['batch_size']
     nb_epoch = parameters['nb_epoch']
-    saved_weights_file = parameters['saved_weights_file_path']
+    saved_weights_file = parameters['saved_weights_file_path'] + '_{}.h5'.format(test_subject)
     plot_folder = parameters['plots_folder']
     
     # Load the network
@@ -44,18 +44,23 @@ def train(test_subject, parameters):
     for e in range(nb_epoch):
         next_batch_train = batch_generator('train', parameters, training_set)
         next_batch_val = batch_generator('val', parameters, validation_set)
-        loss_train, acc_train = [], []
+        losses = {'train': [], 'val': []}
+        accuracies = {'train': [], 'val': []}
         for b in range(nb_batches_train):
             image, ofstack, label = next_batch_train.next()
             loss, accuracy = model.train_on_batch([image, ofstack], label)
-            loss_train.append(loss)
-            acc_train.append(accuracy)
+            losses['train'].append(loss)
+            accuracies['train'].append(accuracy)      
         preds, gt = [], []
+        loss_val, acc_val = [], []
         for b in range(nb_batches_val):
             image, ofstack, label = next_batch_val.next()
             pred = model.predict([image, ofstack], batch_size=batch_size)
             gt.append(label)
             preds.append(pred)
+            loss, accuracy = model.trdy_on_batch([image, ofstack], label)
+            losses['val'].append(loss)
+            accuracies['val'].append(accuracy)   
         val_f1 = metrics.f1_score(
             np.argmax(gt,1), np.argmax(preds,1), average='macro'
         )
@@ -65,6 +70,9 @@ def train(test_subject, parameters):
                   e, np.mean(loss_train), np.mean(acc_train), val_acc, val_f1
                   )
               )
+        plot_training_info(test_subject, metrics, save=True,
+                           losses, accuracies
+                           )
     
     print('Validation accuracy:', max(history.history['val_acc']))
     print('Validation loss:', min(history.history['val_loss']))
@@ -97,8 +105,6 @@ def train(test_subject, parameters):
     print 'precision:', metrics['precision']
     print 'recall:', metrics['recall']
     print 'f1:', metrics['f1'] 
-    
-    plot_training_info(test_subject, metrics, save=True, history.history)
 
 if __name__ == '__main__':
     with open('parameters.json') as f:

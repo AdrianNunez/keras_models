@@ -69,13 +69,13 @@ def calculate_evaluation_metrics(y_gt, y_preds):
                 
     return metric_results
 
-def plot_training_info(test_subject, parameters, metrics, save, history):
+def plot_training_info(test_subject, parameters, metrics, save, losses, accuracies):
     plot_folder = parameters['plots_folder']
     
     # summarize history for accuracy
     if 'accuracy' in metrics:
-        plt.plot(history['acc'])
-        plt.plot(history['val_acc'])
+        plt.plot(accuracies['train'])
+        plt.plot(accuracies['val'])
         plt.title('model accuracy')
         plt.ylabel('accuracy')
         plt.xlabel('epoch')
@@ -88,8 +88,8 @@ def plot_training_info(test_subject, parameters, metrics, save, history):
 
     # summarize history for loss
     if 'loss' in metrics:
-        plt.plot(history['loss'])
-        plt.plot(history['val_loss'])
+        plt.plot(losses['train'])
+        plt.plot(losses['val'])
         plt.title('model loss')
         plt.ylabel('loss')
         plt.xlabel('epoch')
