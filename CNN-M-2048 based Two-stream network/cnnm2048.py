@@ -1,7 +1,7 @@
 import gc
 import numpy as np
 # Always fix the randomness seed value
-from numpy import seed
+from numpy.random import seed
 seed(7)
 import tensorflow as tf
 from keras.models import Model
