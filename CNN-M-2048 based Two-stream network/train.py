@@ -70,9 +70,7 @@ def train(test_subject, parameters):
                   e, np.mean(loss_train), np.mean(acc_train), val_acc, val_f1
                   )
               )
-        plot_training_info(test_subject, metrics, save=True,
-                           losses, accuracies
-                           )
+        plot_training_info(test_subject, metrics, losses, accuracies, True)
     
     print('Validation accuracy:', max(history.history['val_acc']))
     print('Validation loss:', min(history.history['val_loss']))
