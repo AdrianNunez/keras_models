@@ -10,8 +10,8 @@ import gc
 from sklearn.metrics import confusion_matrix
 
 from cnnm2048 import two_stream_network
-from data import load_image_dataset
-from utils import get_classes, calculate_evaluation_metrics, plot_training_info
+from data import load_train_val_image_dataset, load_test_image_dataset, batch_generator
+from utils import calculate_evaluation_metrics, plot_training_info
 
 def train(test_subject, parameters):
     # Load parameters
