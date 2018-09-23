@@ -56,15 +56,16 @@ def load_npy_weights(model, name, weights_file, initialize_last_layer=False):
     # Add the Caffe weights (in .npy format) to the network
     data = np.load(weights_file).item()
     keys = data.keys()
+    print(keys)
     keys.sort()
     for key in keys:
-        #if model.get_layer(name=key) == None: continue
+        if model.get_layer(name=key) == None: continue
         if not initialize_last_layer and key == 'fc8_{}'.format(name): continue
         
         w, b = data[key]['weights'], data[key]['biases']
         w = np.asarray(w, dtype=np.float32)
         b = np.asarray(b, dtype=np.float32)
-        model.get_layer(name=key).set_weights((w,b))
+        model.get_layer_by_name(key + '_{}'.format(name)).set_weights((w,b))
         del w, b
         gc.collect()
     del data
@@ -84,14 +85,19 @@ def two_stream_network(parameters):
     spatialnet = cnn_m_2048(name='spatialnet',
                             input_shape=input_shape_spatialnet, 
                             keep_prob_1=dropout_spatialnet_1)
-    pre_trained_spatialnet = load_npy_weights(model=spatialnet, name='spatialnet', weights_file=imagenet_weights_path)
     
     temporalnet = cnn_m_2048(name='temporalnet',
                             input_shape=input_shape_temporalnet, 
                             keep_prob_1=dropout_temporalnet_1) 
-    pre_trained_temporalnet = load_npy_weights(model=temporalnet, name='temporalnet', weights_file=ucf101_weights_path)
+    
                             
-    merged_network = Concatenate([pre_trained_spatialnet, pre_trained_temporalnet], axis=1)
+    merged_network = Concatenate([spatialnet, temporalnet], axis=1)
     logits = Dense(nb_classes, name='logits', init='glorot_uniform')(merged_network)
     softmax = Activation('softmax')(logits)
-    return Model(inputs=[pre_trained_spatialnet.input, pre_trained_temporalnet.input], outputs=softmax)
+    model= Model(inputs=[spatialnet.input, temporalnet.input], outputs=softmax)
+    
+    # Load weights for each branch
+    model = load_npy_weights(model=spatialnet, name='spatialnet', weights_file=imagenet_weights_path)
+    model = load_npy_weights(model=temporalnet, name='temporalnet', weights_file=ucf101_weights_path)
+    
+    return model
