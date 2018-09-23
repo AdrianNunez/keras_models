@@ -58,7 +58,7 @@ def load_npy_weights(model, name, weights_file, initialize_last_layer=False):
     keys = data.keys()
     keys.sort()
     for key in keys:
-        if model.get_layer(name=key) == None: continue
+        #if model.get_layer(name=key) == None: continue
         if not initialize_last_layer and key == 'fc8_{}'.format(name): continue
         
         w, b = data[key]['weights'], data[key]['biases']
