@@ -6,7 +6,7 @@
 "subjects": ["Ahmad", "Alireza", "Carlos", "Rahul", "Yin", "Shaghayegh"],
 "data_files_folder": "gaze+TrainTestlist/",
 "images_folder": "gaze_plus_images/",
-"plot_folder": "plots/",
+"plots_folder": "plots/",
 "width": 224,
 "height": 224,
 "channels": 3,
