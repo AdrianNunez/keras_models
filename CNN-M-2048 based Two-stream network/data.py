@@ -52,21 +52,22 @@ def load_inputs(mode, test_subject, parameters, val_index=None):
     
     #
     X, Y = [], []
-    for i in range(folders):
+    for i in range(len(folders)):
+        folder = folders[i]
         class_name = folder[folder.find('/')+1:folder.rfind('/')]
         actor = folder[:folder.find('/')]
         # Only include the elements with index inside val_index for the validation set
         if mode == 'val':
             if i in val_index:
-                X.append(images_folder + folders[i])
+                X.append(images_folder + folder)
                 Y.append(int(labels[i]))
         # Do not include elements of the validation set in the training set
         elif mode == 'train':
             if not i in val_index:
-                X.append(images_folder + folders[i])
+                X.append(images_folder + folder)
                 Y.append(int(labels[i]))
         elif mode == 'test':
-            X.append(images_folder + folders[i])
+            X.append(images_folder + folder)
             Y.append(int(labels[i]))
     del folders, labels
     gc.collect()
