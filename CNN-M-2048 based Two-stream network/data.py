@@ -9,14 +9,18 @@ from sklearn.model_selection import StratifiedShuffleSplit
 import cv2
 from collections import Counter
 from keras.utils import to_categorical
+import scipy.io as sio
 
 def load_inputs(mode, test_subject, parameters, val_index=None):
     subjects = parameters['subjects']
     data_files_folder = parameters['data_files_folder']
     images_folder = parameters['images_folder']
+    of_folder = parameters['of_folder']
     val_size = parameters['percentage_of_train_for_validation']
     classes_file = parameters['classes_file']
     L = parameters['L']
+    of_mean = parameters['of_mean']
+    image_mean = sio.loadmat(parameters['image_mean'])['image_mean']
     image_shape = (parameters['width'], parameters['height'])
     
     dic = dict()
@@ -44,12 +48,11 @@ def load_inputs(mode, test_subject, parameters, val_index=None):
        
     # Stratify the dataset in train to get a validation partition:
     # i.e., get a subset of the training set with the same class distsribution
-    val_index = []
+    
     if mode == 'train':
         sss = StratifiedShuffleSplit(n_splits=1, test_size=val_size, random_state=0)
         indices = sss.split(folders, labels)
         val_index = indices.next()[1]
-    
     #
     X, Y = [], []
     for i in range(len(folders)):
@@ -59,29 +62,29 @@ def load_inputs(mode, test_subject, parameters, val_index=None):
         # Only include the elements with index inside val_index for the validation set
         if mode == 'val':
             if i in val_index:
-                X.append(images_folder + folder)
+                X.append(folder)
                 Y.append(int(labels[i]))
         # Do not include elements of the validation set in the training set
         elif mode == 'train':
             if not i in val_index:
-                X.append(images_folder + folder)
+                X.append(folder)
                 Y.append(int(labels[i]))
         elif mode == 'test':
-            X.append(images_folder + folder)
+            X.append(folder)
             Y.append(int(labels[i]))
     del folders, labels
     gc.collect()
    
-    cnt = Counter()
+    #cnt = Counter()
     folders_in_class = dict()
     class_of_folder = dict()
-    nb_total_images = 0
+    #nb_total_images = 0
         
     for folder, label in zip(X, Y):
-        frames = glob.glob(folder + '/frame*')
+        #frames = glob.glob(folder + '/frame*')
         # Count the number of images inside a folder/video
-        nb_images = len(frames)
-        nb_total_images += nb_images
+        #nb_images = len(frames)
+        #nb_total_images += nb_images
         
         temp = folder[:folder.rfind('/')]
         class_name = temp[temp.rfind('/')+1:]
@@ -91,10 +94,10 @@ def load_inputs(mode, test_subject, parameters, val_index=None):
             folders_in_class[class_name] = []
         folders_in_class[class_name].append(folder)
         # Store the number of stacks per class (for data replication in training time)
-        if not cnt.has_key(class_name):  
-            cnt[class_name] = nb_images
-        else:
-            cnt[class_name] += nb_images
+        #if not cnt.has_key(class_name):  
+        #    cnt[class_name] = nb_images
+        #else:
+        #    cnt[class_name] += nb_images
         # Store the class of a given folder name
         class_of_folder[folder] = label
   
@@ -104,7 +107,7 @@ def load_inputs(mode, test_subject, parameters, val_index=None):
     #        max_class = cnt.most_common()[0][0]
     #while True:     
         # perm is used to randomize the order of the classes
-    perm = np.random.permutation(len(cnt.keys()))
+    perm = np.random.permutation(len(folders_in_class.keys()))
     batches_images, batches_stacks, batches_labels, inputs_per_video = [], [], [], []
     #batch_labels_video = []
     #video_durations = []
@@ -116,52 +119,36 @@ def load_inputs(mode, test_subject, parameters, val_index=None):
         for element in folders:  
             inputs_per_video.append(nb_videos)
             # LOAD IMAGES
-            frames = glob.glob(element + '/frame*')
+            frames = glob.glob(images_folder + element + '/frame*')
             temp = []
             for i in xrange(len(frames)):        
                 img = cv2.imread(frames[i])
-                temp.append(img)
+                temp.append(img - image_mean)
             batches_images.append(temp)
             #labels_by_video.append(class_of_folder[element])
             
             # LOAD OPTICAL FLOW
-            x_frames = glob.glob(element + '/flow_x*')
-            y_frames = glob.glob(element + '/flow_y*')       
+            x_frames = glob.glob(of_folder + element + '/flow_x*')
+            y_frames = glob.glob(of_folder + element + '/flow_y*')       
             rest = len(x_frames) % L
             add = 0
             if rest > 0:
                 add = 1
             temp = []
             for r in xrange(((len(x_frames) - rest) // L) + add):        
-                # Variables used for random transformations, necessary to do them here to apply the same transformation to the whole stack
-                #dx = np.random.randint(0, resize_shape[0]-image_shape[0])
-                #dy = np.random.randint(0, resize_shape[1]-image_shape[1])
-                #rand = np.random.rand(1)
                 low, high = r*L, (r+1)*L
                 if high > len(x_frames):
                     low, high = -L, len(x_frames)
                 i = 0
-                #if mode == 'train':
-                #flow = np.zeros(shape=resize_shape + (2*L,), dtype=np.float32)
-                #else:
                 flow = np.zeros(shape=image_shape + (2*L,), dtype=np.float32)
                 for flow_x_file, flow_y_file in zip(x_frames[low:high],y_frames[low:high]):
                     img_x = cv2.imread(flow_x_file, cv2.IMREAD_GRAYSCALE)
                     img_y = cv2.imread(flow_y_file, cv2.IMREAD_GRAYSCALE)
-                    # Resize from original size to resize_shape, then do a random crop
-                    #if mode == 'train':
-                    #    img_x = imresize(img_x, resize_shape, interp='bilinear') 
-                    #img_x = img_x[dx:dx+image_shape[0], dy:dy+image_shape[1]]
-                    #img_y = img_y[dx:dx+image_shape[0], dy:dy+image_shape[1]]
-                    # Random horizontal mirroring
-                    #if mode == 'train' and rand > 0.5:
-                    #    img_x = 255 - img_x[:, ::-1]
-                    #    img_y = img_y[:, ::-1] 
                     flow[:,:,2*i] = img_x
                     flow[:,:,2*i+1] = img_y
                     i += 1
-                    temp.append(flow)
-                    nb_videos += 1
+                temp.append(flow - of_mean)
+                nb_videos += 1
             batches_stacks.append(temp)
             batches_labels.append(class_of_folder[element])
             
@@ -245,11 +232,15 @@ def batch_generator(mode, parameters, dataset):
                 inner_pos = np.random.randint(pos_stack*L,pos_stack*(L+1))
             batch.append((dataset['images'][pos][inner_pos],
                    dataset['stacks'][pos][pos_stack],
-                   to_categorical(dataset['labels'][pos], nb_classes)))
+                   to_categorical(dataset['labels'][pos], nb_classes))
+            )
             if len(batch) == batch_size:
                 yield batch
                 batch = []
-        if mode == 'train' and nb_inputs % batch_size > 0:
+        if mode == 'val' or mode == 'test':
+            if len(batch) > 0:
+                yield batch
+        elif mode == 'train' and nb_inputs % batch_size > 0:
             indices = np.random.choice(
                 range(nb_inputs), nb_inputs % batch_size
             )
