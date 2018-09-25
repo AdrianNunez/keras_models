@@ -6,7 +6,7 @@
 "subjects": ["Ahmad", "Alireza", "Carlos", "Rahul", "Yin", "Shaghayegh"],
 "data_files_folder": "../Gaze+_dataset/gaze+TrainTestlist/",
 "images_folder": "/home/anunez/project/gaze+/gaze_plus/",
-"of_folder": "/home/anunez/project/gaze+of_leaveoneout/",
+"of_folder": "/home/anunez/project/gaze_plus_of/",
 "plots_folder": "plots/",
 "classes_file": "../Gaze+_dataset/gaze+TrainTestlist/classInd.txt",
 "of_mean": 128,
