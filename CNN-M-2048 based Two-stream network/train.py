@@ -15,7 +15,10 @@ from data import (load_train_val_image_dataset, load_test_image_dataset,
 from utils import (get_classes, calculate_evaluation_metrics,
                    plot_training_info, plot_confusion_matrix)
 
+<<<<<<< HEAD
 # Specify which GPU is used
+=======
+>>>>>>> b605ce5e307a460c2b3677e22cc99358e52f0cc0
 os.environ["CUDA_VISIBLE_DEVICES"]="2"
 
 def train(test_subject, parameters):
@@ -70,7 +73,10 @@ def train(test_subject, parameters):
         
         preds, gt = np.zeros((nb_inputs_val)), np.zeros((nb_inputs_val))
         val_loss = 0
+<<<<<<< HEAD
         #Validation
+=======
+>>>>>>> b605ce5e307a460c2b3677e22cc99358e52f0cc0
         for b in range(nb_batches_val):
             image, ofstack, label = next_batch_val.next()
             pred = model.predict([image, ofstack], batch_size=batch_size)
@@ -91,11 +97,17 @@ def train(test_subject, parameters):
                   )
               )
               
+<<<<<<< HEAD
         # Plot training and validation loss and accuracy
         plot_training_info(
             test_subject, parameters, metrics, True, losses, accuracies
         )
         # Save weights of the model if a better loss is found
+=======
+        plot_training_info(
+            test_subject, parameters, metrics, True, losses, accuracies
+        )
+>>>>>>> b605ce5e307a460c2b3677e22cc99358e52f0cc0
         if losses['val'] < best_loss:
             best_epoch = e
             best_loss = losses['val']
@@ -118,7 +130,10 @@ def train(test_subject, parameters):
         
     next_batch_test = batch_generator('test', parameters, test_set)
     preds, gt = np.zeros((nb_inputs_val)), np.zeros((nb_inputs_val))
+<<<<<<< HEAD
     # Test
+=======
+>>>>>>> b605ce5e307a460c2b3677e22cc99358e52f0cc0
     for i in range(nb_batches_test):
         image, ofstack, label = next_batch_test.next()
         gt[b*batch_size:b*batch_size+label.shape[0]] = np.argmax(label,1)
@@ -131,7 +146,10 @@ def train(test_subject, parameters):
     )
     cm_path = '{}cm_{}.pdf'.format(plot_folder, test_subject)
     classes = get_classes(classes_file)
+<<<<<<< HEAD
     # Save the confusion matrix
+=======
+>>>>>>> b605ce5e307a460c2b3677e22cc99358e52f0cc0
     plot_confusion_matrix(
         cm, classes, cm_path, normalize=True, title=title, cmap='coolwarm',
         font_size=5
