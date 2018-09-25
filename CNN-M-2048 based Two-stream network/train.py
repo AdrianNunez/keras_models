@@ -2,16 +2,21 @@
 from numpy.random import seed
 seed(7)
 import numpy as np
+import os
 
 from keras.optimizers import Adam
-from keras.callbacks import EarlyStopping, ModelCheckpoint
 import json
 import gc
-from sklearn.metrics import confusion_matrix, accuracy_score
+from sklearn.metrics import confusion_matrix, accuracy_score, f1_score
 
 from cnnm2048 import two_stream_network
-from data import load_train_val_image_dataset, load_test_image_dataset, batch_generator
-from utils import get_classes, calculate_evaluation_metrics, plot_training_info, plot_confusion_matrix
+from data import (load_train_val_image_dataset, load_test_image_dataset,
+                  batch_generator)
+from utils import (get_classes, calculate_evaluation_metrics,
+                   plot_training_info, plot_confusion_matrix)
+
+# Specify which GPU is used
+os.environ["CUDA_VISIBLE_DEVICES"]="2"
 
 def train(test_subject, parameters):
     # Load parameters
@@ -22,6 +27,10 @@ def train(test_subject, parameters):
     saved_weights_file = parameters['saved_weights_file_path'] + '_{}.h5'.format(test_subject)
     plot_folder = parameters['plots_folder']
     classes_file = parameters['classes_file']
+    
+    # Create any necessary folder
+    if not os.path.exists(plot_folder):
+        os.makedirs(plot_folder)
     
     # Load the network
     model = two_stream_network(parameters)
@@ -41,7 +50,7 @@ def train(test_subject, parameters):
     if nb_inputs_val % batch_size > 0:
         nb_batches_val += 1
     
-    # Train the model 
+    # Train the model (validate with validation set in each epoch) 
     best_loss, best_epoch = 1e8, 0
     losses = {'train': [], 'val': []}
     accuracies = {'train': [], 'val': []}
@@ -49,6 +58,7 @@ def train(test_subject, parameters):
         next_batch_train = batch_generator('train', parameters, training_set)
         next_batch_val = batch_generator('val', parameters, validation_set)
         train_acc, train_loss = 0, 0
+        # Training
         for b in range(nb_batches_train):
             image, ofstack, label = next_batch_train.next()
             loss, accuracy = model.train_on_batch([image, ofstack], label)
@@ -58,31 +68,34 @@ def train(test_subject, parameters):
         losses['train'].append(float(train_loss)/float(nb_batches_train))
         accuracies['train'].append(float(train_acc)/float(nb_batches_train)) 
         
-        preds, gt = [], []
-        val_loss = 0, 0
+        preds, gt = np.zeros((nb_inputs_val)), np.zeros((nb_inputs_val))
+        val_loss = 0
+        #Validation
         for b in range(nb_batches_val):
             image, ofstack, label = next_batch_val.next()
             pred = model.predict([image, ofstack], batch_size=batch_size)
-            gt.append(label)
-            preds.append(pred)
+            gt[b*batch_size:b*batch_size+label.shape[0]] = np.argmax(label,1)
+            preds[b*batch_size:b*batch_size+pred.shape[0]] = np.argmax(pred,1)
             loss, _ = model.test_on_batch([image, ofstack], label)
             val_loss += loss
-            
+        
+        val_acc = accuracy_score(gt, preds)
         losses['val'].append(float(val_loss)/float(nb_batches_val))
-        accuracies['val'].append(accuracy_score(
-            np.argmax(gt,1), np.argmax(preds,1))
-        ) 
-        val_f1 = metrics.f1_score(
-            np.argmax(gt,1), np.argmax(preds,1), average='macro'
-        )
-        val_acc = metrics.accuracy_score(np.argmax(gt,1), np.argmax(preds,1))
+        accuracies['val'].append(val_acc) 
+        val_f1 = f1_score(gt, preds, average='macro')
+        
         print('Epoch {} - Train Loss: {}, Train Acc: {} / Val Acc: {},'
               'Val F1: {}'.format(
                   e, np.mean(losses['train']), np.mean(accuracies['train']),
                   val_acc, val_f1
                   )
               )
-        plot_training_info(test_subject, metrics, losses, accuracies, True)
+              
+        # Plot training and validation loss and accuracy
+        plot_training_info(
+            test_subject, parameters, metrics, True, losses, accuracies
+        )
+        # Save weights of the model if a better loss is found
         if losses['val'] < best_loss:
             best_epoch = e
             best_loss = losses['val']
@@ -96,29 +109,35 @@ def train(test_subject, parameters):
     # Load best model
     model.load_weights(saved_weights_file)
 
-    # Load the test set and compute metrics and confusion matrix
+    # Load the test set
     test_set = load_test_image_dataset(parameters, test_subject)
     nb_inputs_test = test_set['inputs_per_video'][-1]
     nb_batches_test = nb_inputs_test // batch_size
     if nb_inputs_test % batch_size > 0:
         nb_batches_test += 1
+        
     next_batch_test = batch_generator('test', parameters, test_set)
-    gt, preds = [], []
+    preds, gt = np.zeros((nb_inputs_val)), np.zeros((nb_inputs_val))
+    # Test
     for i in range(nb_batches_test):
         image, ofstack, label = next_batch_test.next()
-        pred = model.predict([image, ofstack], batch_size=batch_size)
-        gt.append(label)
-        preds.append(pred)
-    
-    ytrue = np.argmax(gt,1)
-    ypreds = np.argmax(preds,1)
-    cm = confusion_matrix(ytrue, ypreds)
-    title = 'Normalized confusion matrix in test set ({} fold)'.format(test_subject)
+        gt[b*batch_size:b*batch_size+label.shape[0]] = np.argmax(label,1)
+        preds[b*batch_size:b*batch_size+pred.shape[0]] = np.argmax(pred,1)
+        preds += np.argmax(pred,1)
+
+    cm = confusion_matrix(gt, preds)
+    title = 'Normalized confusion matrix in test set ({} fold)'.format(
+        test_subject
+    )
     cm_path = '{}cm_{}.pdf'.format(plot_folder, test_subject)
     classes = get_classes(classes_file)
-    plot_confusion_matrix(cm, classes, cm_path, normalize=True, title=title, cmap='coolwarm', font_size=5)    
+    # Save the confusion matrix
+    plot_confusion_matrix(
+        cm, classes, cm_path, normalize=True, title=title, cmap='coolwarm',
+        font_size=5
+    )    
     
-    metrics = calculate_evaluation_metrics(ytrue, ypreds)
+    metrics = calculate_evaluation_metrics(gt, preds)
     print "Scikit metrics"
     print 'accuracy: ', metrics['acc']
     print 'precision:', metrics['precision']

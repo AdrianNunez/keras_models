@@ -108,7 +108,7 @@ def load_inputs(mode, test_subject, parameters, val_index=None):
     #while True:     
         # perm is used to randomize the order of the classes
     perm = np.random.permutation(len(folders_in_class.keys()))
-    batches_images, batches_stacks, batches_labels, inputs_per_video = [], [], [], []
+    batches_images, batches_stacks, batches_labels, inputs_per_video, video_names = [], [], [], [],[]
     #batch_labels_video = []
     #video_durations = []
     nb_videos = 0
@@ -117,9 +117,19 @@ def load_inputs(mode, test_subject, parameters, val_index=None):
     for p in np.asarray(folders_in_class.keys())[list(perm)]:         
         folders = folders_in_class[p]
         for element in folders:  
+            video_names.append(element)
             inputs_per_video.append(nb_videos)
             # LOAD IMAGES
             frames = glob.glob(images_folder + element + '/frame*')
+            
+            if len(frames) < L:
+                reps = int(L/len(frames))
+                temp = frames
+                frames = []
+                for i in range(len(temp)):
+                    for _ in xrange(reps):
+                        frames.append(temp[i])
+
             temp = []
             for i in xrange(len(frames)):        
                 img = cv2.imread(frames[i])
@@ -129,13 +139,21 @@ def load_inputs(mode, test_subject, parameters, val_index=None):
             
             # LOAD OPTICAL FLOW
             x_frames = glob.glob(of_folder + element + '/flow_x*')
-            y_frames = glob.glob(of_folder + element + '/flow_y*')       
+            y_frames = glob.glob(of_folder + element + '/flow_y*')
+            if len(frames) < L:
+                reps = int(L/len(x_frames))
+                temp_x, temp_y = x_frames, y_frames
+                x_frames, y_frames = [], []
+                for i in range(len(temp_x)):
+                    for _ in xrange(reps):
+                        x_frames.append(temp_x[i])
+                        y_frames.append(temp_y[i])
             rest = len(x_frames) % L
             add = 0
             if rest > 0:
                 add = 1
             temp = []
-            for r in xrange(((len(x_frames) - rest) // L) + add):        
+            for r in xrange((len(x_frames) // L) + add):        
                 low, high = r*L, (r+1)*L
                 if high > len(x_frames):
                     low, high = -L, len(x_frames)
@@ -151,7 +169,7 @@ def load_inputs(mode, test_subject, parameters, val_index=None):
                 nb_videos += 1
             batches_stacks.append(temp)
             batches_labels.append(class_of_folder[element])
-            
+            assert len(temp) == ((len(x_frames) // L)+add)
                     
             #video_durations.append(len(frames))
         # Data replication: repeat data to get the amount of data in the class with maximum number of samples
@@ -184,7 +202,7 @@ def load_inputs(mode, test_subject, parameters, val_index=None):
     #class_labels.sort()
     return {'images': batches_images, 'stacks': batches_stacks, 
             'labels': batches_labels, 'inputs_per_video': inputs_per_video,
-            'val_index': val_index}
+            'val_index': val_index, 'video_names': video_names}
     
 def load_train_val_image_dataset(parameters, test_subject):
     training_set = load_inputs('train', test_subject, parameters)
@@ -221,25 +239,40 @@ def batch_generator(mode, parameters, dataset):
     
     while True:
         perm = np.random.permutation(nb_inputs)
-        batch = []
-        for i in xrange(nb_inputs):
+        batch_images, batch_ofs, batch_labels = [], [], []
+        for i in xrange(nb_inputs): 
             pos = np.searchsorted(
                 dataset['inputs_per_video'], perm[i], side='left'
             )
-            pos_stack = perm[i]-pos
-            inner_pos = pos_stack*L + L/2 # for test and validation
-            if mode == 'train':
-                inner_pos = np.random.randint(pos_stack*L,pos_stack*(L+1))
-            batch.append((dataset['images'][pos][inner_pos],
-                   dataset['stacks'][pos][pos_stack],
-                   to_categorical(dataset['labels'][pos], nb_classes))
+            if dataset['inputs_per_video'][pos] > perm[i]:
+                pos -= 1
+            pos_stack = perm[i]-dataset['inputs_per_video'][pos]
+            
+            if pos_stack*L+L >= len(dataset['images'][pos]):
+                if mode == 'train':
+                    inner_pos = len(dataset['images'][pos]) - 1 - np.random.randint(0, L)
+                else:
+                    inner_pos = len(dataset['images'][pos]) - 1 - 5
+            else:
+                if mode == 'train':
+                    inner_pos = np.random.randint(pos_stack*L,pos_stack*L+L)
+                else:
+                    inner_pos = pos_stack*L + L/2 
+           
+            batch_images.append(dataset['images'][pos][inner_pos])
+            batch_ofs.append(dataset['stacks'][pos][pos_stack])
+            batch_labels.append(
+                to_categorical(dataset['labels'][pos], nb_classes)
             )
-            if len(batch) == batch_size:
-                yield batch
-                batch = []
+            if len(batch_images) == batch_size:
+                yield (np.asarray(batch_images), np.asarray(batch_ofs),
+                       np.asarray(batch_labels))
+                batch_images, batch_ofs, batch_labels = [], [], []
         if mode == 'val' or mode == 'test':
-            if len(batch) > 0:
-                yield batch
+            if len(batch_images) > 0:
+                yield (np.asarray(batch_images), np.asarray(batch_ofs),
+                       np.asarray(batch_labels))
+                batch_images, batch_ofs, batch_labels = [], [], []
         elif mode == 'train' and nb_inputs % batch_size > 0:
             indices = np.random.choice(
                 range(nb_inputs), nb_inputs % batch_size
@@ -248,16 +281,29 @@ def batch_generator(mode, parameters, dataset):
                 pos = np.searchsorted(
                     dataset['inputs_per_video'], i, side='left'
                 )
-                pos_stack = i-pos
-                inner_pos = pos_stack*L + L/2 # for test and validation
-                if mode == 'train':
-                    inner_pos = np.random.randint(pos_stack*L,pos_stack*(L+1))
-                batch.append((dataset['images'][pos][inner_pos],
-                       dataset['stacks'][pos][pos_stack],
-                       to_categorical(dataset['labels'][pos], nb_classes)))
-                if len(batch) == batch_size:
-                    yield batch
-                    batch = []
+                if dataset['inputs_per_video'][pos] > i:
+                    pos -= 1
+                pos_stack = i-dataset['inputs_per_video'][pos]
+                if pos_stack*L+L >= len(dataset['images'][pos]):
+                    if mode == 'train':
+                        inner_pos = len(dataset['images'][pos]) - 1 - np.random.randint(0, L)
+                    else:
+                        inner_pos = len(dataset['images'][pos]) - 1 - 5
+                else:
+                    if mode == 'train':
+                        inner_pos = np.random.randint(pos_stack*L,pos_stack*L+L)
+                    else:
+                        inner_pos = pos_stack*L + L/2 
+                
+                batch_images.append(dataset['images'][pos][inner_pos])
+                batch_ofs.append(dataset['stacks'][pos][pos_stack])
+                batch_labels.append(
+                    to_categorical(dataset['labels'][pos], nb_classes)
+                )
+                if len(batch_images) == batch_size:
+                    yield (np.asarray(batch_images), np.asarray(batch_ofs),
+                           np.asarray(batch_labels))
+                    batch_images, batch_ofs, batch_labels = [], [], []
             
             
             
