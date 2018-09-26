@@ -23,10 +23,7 @@ def load_inputs(mode, test_subject, parameters, val_index=None):
     image_mean = sio.loadmat(parameters['image_mean'])['image_mean']
     image_shape = (parameters['width'], parameters['height'])
     
-    dic = dict()
-    for actor in subjects:
-        dic[actor] = dict()
-    
+    # Load the .txt where train/test partition are saved
     if mode == 'train' or mode == 'val':
         data_file = data_files_folder + '/train_{}.txt'.format(test_subject)
     elif mode == 'test':
@@ -48,18 +45,19 @@ def load_inputs(mode, test_subject, parameters, val_index=None):
        
     # Stratify the dataset in train to get a validation partition:
     # i.e., get a subset of the training set with the same class distsribution
-    
     if mode == 'train':
-        sss = StratifiedShuffleSplit(n_splits=1, test_size=val_size, random_state=0)
+        sss = StratifiedShuffleSplit(
+            n_splits=1, test_size=val_size, random_state=0
+        )
         indices = sss.split(folders, labels)
         val_index = indices.next()[1]
-    #
+    
     X, Y = [], []
     for i in range(len(folders)):
         folder = folders[i]
         class_name = folder[folder.find('/')+1:folder.rfind('/')]
-        actor = folder[:folder.find('/')]
-        # Only include the elements with index inside val_index for the validation set
+        # Only include the elements with index inside val_index
+        # for the validation set
         if mode == 'val':
             if i in val_index:
                 X.append(folder)
@@ -75,17 +73,9 @@ def load_inputs(mode, test_subject, parameters, val_index=None):
     del folders, labels
     gc.collect()
    
-    #cnt = Counter()
     folders_in_class = dict()
-    class_of_folder = dict()
-    #nb_total_images = 0
-        
+    class_of_folder = dict()        
     for folder, label in zip(X, Y):
-        #frames = glob.glob(folder + '/frame*')
-        # Count the number of images inside a folder/video
-        #nb_images = len(frames)
-        #nb_total_images += nb_images
-        
         temp = folder[:folder.rfind('/')]
         class_name = temp[temp.rfind('/')+1:]
 
@@ -93,22 +83,11 @@ def load_inputs(mode, test_subject, parameters, val_index=None):
         if not folders_in_class.has_key(class_name):  
             folders_in_class[class_name] = []
         folders_in_class[class_name].append(folder)
-        # Store the number of stacks per class (for data replication in training time)
-        #if not cnt.has_key(class_name):  
-        #    cnt[class_name] = nb_images
-        #else:
-        #    cnt[class_name] += nb_images
-        # Store the class of a given folder name
         class_of_folder[folder] = label
-  
-    # In order to get the same amount of samples in each class, replicate data
-    #if mode == 'train':
-    #    if replicate == 'max':
-    #        max_class = cnt.most_common()[0][0]
-    #while True:     
-        # perm is used to randomize the order of the classes
+        
     perm = np.random.permutation(len(folders_in_class.keys()))
-    batches_images, batches_stacks, batches_labels, inputs_per_video, video_names = [], [], [], [],[]
+    (batches_images, batches_stacks, batches_labels,
+     inputs_per_video, video_names) = [], [], [], [],[]
     #batch_labels_video = []
     #video_durations = []
     nb_videos = 0
@@ -119,9 +98,9 @@ def load_inputs(mode, test_subject, parameters, val_index=None):
         for element in folders:  
             video_names.append(element)
             inputs_per_video.append(nb_videos)
-            # LOAD IMAGES
+            # Load images:
             frames = glob.glob(images_folder + element + '/frame*')
-            
+            # In case of less than L images, replicate them
             if len(frames) < L:
                 reps = int(L/len(frames))
                 temp = frames
@@ -133,11 +112,11 @@ def load_inputs(mode, test_subject, parameters, val_index=None):
             temp = []
             for i in xrange(len(frames)):        
                 img = cv2.imread(frames[i])
+                # subtract the image mean (used in the pre-training)
                 temp.append(img - image_mean)
             batches_images.append(temp)
-            #labels_by_video.append(class_of_folder[element])
             
-            # LOAD OPTICAL FLOW
+            # Load optical flow and stack L horizontal and vertical images
             x_frames = glob.glob(of_folder + element + '/flow_x*')
             y_frames = glob.glob(of_folder + element + '/flow_y*')
             if len(frames) < L:
@@ -150,6 +129,9 @@ def load_inputs(mode, test_subject, parameters, val_index=None):
                         y_frames.append(temp_y[i])
             rest = len(x_frames) % L
             add = 0
+            # In case of spare optical flow images, add one more stack
+            # taking the last L images (there is some overlap with the
+            # previous stack)
             if rest > 0:
                 add = 1
             temp = []
@@ -159,47 +141,20 @@ def load_inputs(mode, test_subject, parameters, val_index=None):
                     low, high = -L, len(x_frames)
                 i = 0
                 flow = np.zeros(shape=image_shape + (2*L,), dtype=np.float32)
-                for flow_x_file, flow_y_file in zip(x_frames[low:high],y_frames[low:high]):
+                for flow_x_file, flow_y_file in zip(
+                        x_frames[low:high],y_frames[low:high]):
                     img_x = cv2.imread(flow_x_file, cv2.IMREAD_GRAYSCALE)
                     img_y = cv2.imread(flow_y_file, cv2.IMREAD_GRAYSCALE)
                     flow[:,:,2*i] = img_x
                     flow[:,:,2*i+1] = img_y
                     i += 1
-                temp.append(flow - of_mean)
+                # Subtract the Optical Flow mean (used in the pre-training)
+                temp.append(flow - of_mean) 
                 nb_videos += 1
             batches_stacks.append(temp)
             batches_labels.append(class_of_folder[element])
             assert len(temp) == ((len(x_frames) // L)+add)
                     
-            #video_durations.append(len(frames))
-        # Data replication: repeat data to get the amount of data in the class with maximum number of samples
-        #if mode == 'train' and data_replication:
-        #    temp_x = images_of_class
-        #    temp_y = labels_of_class
-            #if replicate == 'max':
-            # Need to achieve cnt[max_class] samples
-            #    while len(images_of_class) < cnt[max_class]:    
-            #        for _x, _y in zip(temp_x, temp_y):
-            #            images_of_class.append(_x)
-            #            labels_of_class.append(_y)
-            #            if len(images_of_class) >= cnt[max_class]:
-            #                break
-            #elif replicate == 'median':
-            #    select = np.random.choice(len(temp_x), size=median, replace=True)
-            #    images_of_class = []
-            #    labels_of_class = []
-            #    for s in select:
-            #        images_of_class.append(temp_x[s])
-            #    for s in select:
-            #        labels_of_class.append(temp_y[s])
-            #del temp_x, temp_y
-            #gc.collect()
-        
-    #stack_size = len(batches)
-    #num_batches = stack_size // batch_size
-    #rest = stack_size % batch_size
-    #class_labels = class_dict.values()
-    #class_labels.sort()
     return {'images': batches_images, 'stacks': batches_stacks, 
             'labels': batches_labels, 'inputs_per_video': inputs_per_video,
             'val_index': val_index, 'video_names': video_names}
@@ -250,7 +205,8 @@ def batch_generator(mode, parameters, dataset):
             
             if pos_stack*L+L >= len(dataset['images'][pos]):
                 if mode == 'train':
-                    inner_pos = len(dataset['images'][pos]) - 1 - np.random.randint(0, L)
+                    inner_pos = (len(dataset['images'][pos]) - 1 - 
+                                np.random.randint(0, L))
                 else:
                     inner_pos = len(dataset['images'][pos]) - 1 - 5
             else:
@@ -258,6 +214,8 @@ def batch_generator(mode, parameters, dataset):
                     inner_pos = np.random.randint(pos_stack*L,pos_stack*L+L)
                 else:
                     inner_pos = pos_stack*L + L/2 
+                    
+            # DATA AUGMENTATION GOES HERE
            
             batch_images.append(dataset['images'][pos][inner_pos])
             batch_ofs.append(dataset['stacks'][pos][pos_stack])
@@ -286,14 +244,19 @@ def batch_generator(mode, parameters, dataset):
                 pos_stack = i-dataset['inputs_per_video'][pos]
                 if pos_stack*L+L >= len(dataset['images'][pos]):
                     if mode == 'train':
-                        inner_pos = len(dataset['images'][pos]) - 1 - np.random.randint(0, L)
+                        inner_pos = (len(dataset['images'][pos]) - 1 -
+                                    np.random.randint(0, L))
                     else:
                         inner_pos = len(dataset['images'][pos]) - 1 - 5
                 else:
                     if mode == 'train':
-                        inner_pos = np.random.randint(pos_stack*L,pos_stack*L+L)
+                        inner_pos = np.random.randint(
+                            pos_stack*L,pos_stack*L+L
+                        )
                     else:
                         inner_pos = pos_stack*L + L/2 
+                        
+                # DATA AUGMENTATION GOES HERE
                 
                 batch_images.append(dataset['images'][pos][inner_pos])
                 batch_ofs.append(dataset['stacks'][pos][pos_stack])

@@ -64,14 +64,19 @@ def calculate_evaluation_metrics(y_gt, y_preds):
     }
             
     for t in metric_types:
-        metric_results['precision'][t] = metrics.precision_score(y_gt, y_preds, average = t)
-        metric_results['recall'][t] = metrics.recall_score(y_gt, y_preds, average = t)
+        metric_results['precision'][t] = metrics.precision_score(
+                                                y_gt, y_preds, average = t
+                                                )
+        metric_results['recall'][t] = metrics.recall_score(
+                                                y_gt, y_preds, average = t
+                                                )
         metric_results['f1'][t] = metrics.f1_score(y_gt, y_preds, average = t)
         metric_results['acc'] = metrics.accuracy_score(y_gt, y_preds) 
                 
     return metric_results
 
-def plot_training_info(test_subject, parameters, metrics, save, losses, accuracies):
+def plot_training_info(test_subject, parameters, metrics,
+                       save, losses, accuracies):
     plot_folder = parameters['plots_folder']
     
     # summarize history for accuracy
@@ -81,9 +86,11 @@ def plot_training_info(test_subject, parameters, metrics, save, losses, accuraci
         plt.title('model accuracy')
         plt.ylabel('accuracy')
         plt.xlabel('epoch')
-        lgd = plt.legend(['train', 'val'], bbox_to_anchor=(1.04,1), loc="upper left")
+        lgd = plt.legend(['train', 'val'], bbox_to_anchor=(1.04,1),
+                         loc="upper left")
         if save == True:
-            plt.savefig(plot_folder + '{}_accuracy.png'.format(test_subject), bbox_extra_artists=(lgd,), bbox_inches='tight')
+            plt.savefig(plot_folder + '{}_accuracy.png'.format(test_subject),
+                        bbox_extra_artists=(lgd,), bbox_inches='tight')
             plt.gcf().clear()
         else:
             plt.show()
@@ -99,12 +106,15 @@ def plot_training_info(test_subject, parameters, metrics, save, losses, accuraci
         plt.yscale("log")
         plt.legend(['train', 'val'], bbox_to_anchor=(1.04,1), loc="upper left")
         if save == True:
-            plt.savefig(plot_folder + '{}_loss.png'.format(test_subject), bbox_extra_artists=(lgd,), bbox_inches='tight')
+            plt.savefig(plot_folder + '{}_loss.png'.format(test_subject),
+                        bbox_extra_artists=(lgd,), bbox_inches='tight')
             plt.gcf().clear()
         else:
             plt.show()
             
-def plot_confusion_matrix(cm, classes, path, normalize=False, title='Confusion matrix', cmap='coolwarm', font_size=2):
+def plot_confusion_matrix(cm, classes, path, normalize=False,
+                          title='Confusion matrix', cmap='coolwarm',
+                          font_size=2):
     """
     This function prints and plots the confusion matrix.
     Normalization can be applied by setting `normalize=True`.
@@ -136,7 +146,8 @@ def plot_confusion_matrix(cm, classes, path, normalize=False, title='Confusion m
       
     ax = plt.gca()
     for i in range(range(width)):
-        rect = Rectangle((-0.5+i, -0.5+i), 1, 1, fill=False, edgecolor='black', lw=0.5)
+        rect = Rectangle((-0.5+i, -0.5+i), 1, 1, fill=False,
+                         sedgecolor='black', lw=0.5)
         ax.add_patch(rect)
     
     plt.tight_layout()

@@ -5,50 +5,74 @@ from numpy.random import seed
 seed(7)
 import tensorflow as tf
 from keras.models import Model
-from keras.layers import Input, Convolution2D, Lambda, MaxPooling2D, ZeroPadding2D, Flatten, Dense, Dropout, Activation, concatenate
+from keras.layers import (Input, Convolution2D, Lambda, MaxPooling2D,
+                          ZeroPadding2D, Flatten, Dense, Dropout, Activation,
+                          concatenate)
 
-# This layer normalizes the outputs of a neural network layer. Similar to Batch Normalization layer but deprecated in use.
+# This layer normalizes the outputs of a neural network layer.
+# Similar to Batch Normalization layer but deprecated in use.
 def lrn(input, radius=5, alpha=0.0005, beta=0.75, name='LRN', bias=1.0):
-        return tf.nn.local_response_normalization(input, depth_radius=radius, alpha=alpha, beta=beta, bias=bias, name=name) 
+        return tf.nn.local_response_normalization(input, depth_radius=radius,
+                                                  alpha=alpha, beta=beta,
+                                                  bias=bias, name=name) 
 
-def cnn_m_2048(name, input_shape, keep_prob_1, keep_prob_2=1., num_classes=None, get_feature_vector=True):
+def cnn_m_2048(name, input_shape, keep_prob_1, keep_prob_2=1.,
+               num_classes=None, get_feature_vector=True):
     inputs = Input(shape=input_shape, name='inputs_{}'.format(name))
     # BLOCK 1
-    conv1 = Convolution2D(96, 7, 7, subsample=(2,2), border_mode='valid', activation='relu', name='conv1_{}'.format(name))(inputs)   
+    conv1 = Convolution2D(96, 7, 7, subsample=(2,2), border_mode='valid',
+                          activation='relu', name='conv1_{}'.format(name)
+                          )(inputs)   
     lrn1 = Lambda(lrn)(conv1)
-    pool1 = MaxPooling2D((3,3), strides=(2,2), border_mode='valid', name='pool1_{}'.format(name))(lrn1)
+    pool1 = MaxPooling2D((3,3), strides=(2,2), border_mode='valid',
+                         name='pool1_{}'.format(name))(lrn1)
     
     # BLOCK 2
     padding2 = ZeroPadding2D(padding=(1,1))(pool1)
-    conv2 = Convolution2D(256, 5, 5, subsample=(2,2), border_mode='valid', activation='relu', name='conv2_{}'.format(name))(padding2)
+    conv2 = Convolution2D(256, 5, 5, subsample=(2,2), border_mode='valid',
+                          activation='relu', name='conv2_{}'.format(name)
+                          )(padding2)
     lrn2 = Lambda(lrn)(conv2)
-    pool2 = MaxPooling2D((3,3), strides=(2,2), border_mode='same', name='pool2_{}'.format(name))(lrn2)
+    pool2 = MaxPooling2D((3,3), strides=(2,2), border_mode='same',
+                         name='pool2_{}'.format(name))(lrn2)
     
     # BLOCK 3
     padding3 = ZeroPadding2D(padding=(1,1))(pool2)
-    conv3 = Convolution2D(512, 3, 3, subsample=(1,1), border_mode='valid', activation='relu', name='conv3_{}'.format(name))(padding3)
+    conv3 = Convolution2D(512, 3, 3, subsample=(1,1), border_mode='valid',
+                          activation='relu', name='conv3_{}'.format(name)
+                          )(padding3)
     
     # BLOCK 4
     padding4 = ZeroPadding2D(padding=(1,1))(conv3)
-    conv4 = Convolution2D(512, 3, 3, subsample=(1,1), border_mode='valid', activation='relu', name='conv4_{}'.format(name))(padding4)
+    conv4 = Convolution2D(512, 3, 3, subsample=(1,1), border_mode='valid',
+                          activation='relu', name='conv4_{}'.format(name)
+                          )(padding4)
     
     # BLOCK 5
     padding5 = ZeroPadding2D(padding=(1,1))(conv4)
-    conv5 = Convolution2D(512, 3, 3, subsample=(1,1), border_mode='valid', activation='relu', name='conv5_{}'.format(name))(padding5)
-    pool5 = MaxPooling2D((3,3), strides=(2,2), border_mode='valid', name='pool5_{}'.format(name))(conv5)
+    conv5 = Convolution2D(512, 3, 3, subsample=(1,1), border_mode='valid',
+                          activation='relu', name='conv5_{}'.format(
+                          name)
+                          )(padding5)
+    pool5 = MaxPooling2D((3,3), strides=(2,2), border_mode='valid',
+                         name='pool5_{}'.format(name)
+                         )(conv5)
 
     flatten = Flatten()(pool5)
     
     # MULTILAYER PERCEPTRON (CLASSIFIER)
-    dense1 = Dense(4096, activation='relu', name='fc6_{}'.format(name), init='glorot_uniform')(flatten)
+    dense1 = Dense(4096, activation='relu', name='fc6_{}'.format(name),
+                   init='glorot_uniform')(flatten)
     dropout1 = Dropout(keep_prob_1)(dense1)
-    dense2 = Dense(2048, activation='relu', name='fc7_{}'.format(name), init='glorot_uniform')(dropout1)
+    dense2 = Dense(2048, activation='relu', name='fc7_{}'.format(name),
+                   init='glorot_uniform')(dropout1)
     
     if get_feature_vector:
         return dense2, inputs
         
     dropout2 = Dropout(keep_prob_2)(dense2)
-    logits = Dense(num_classes, bias=True, init='glorot_uniform', name='fc8_{}'.format(name))(dropout2)
+    logits = Dense(num_classes, bias=True, init='glorot_uniform', 
+                   name='fc8_{}'.format(name))(dropout2)
     softmax = Activation('softmax')(logits)
     return Model(inputs=inputs, outputs=softmax), inputs
     
@@ -59,7 +83,6 @@ def load_npy_weights(model, name, weights_file, initialize_last_layer=False):
     print(keys)
     keys.sort()
     for key in keys:
-        #if model.get_layer(name=key + '_{}'.format(name)) == None: continue
         if not initialize_last_layer and 'fc8' in key: continue
         
         w, b = data[key]['weights'], data[key]['biases']
@@ -75,8 +98,10 @@ def load_npy_weights(model, name, weights_file, initialize_last_layer=False):
 def two_stream_network(parameters):
     dropout_spatialnet_1 = parameters['dropout_spatialnet_1']
     dropout_temporalnet_1 = parameters['dropout_temporalnet_1']
-    input_shape_spatialnet = (parameters['width'], parameters['height'], parameters['channels'])
-    input_shape_temporalnet = (parameters['width'], parameters['height'], 2*parameters['L'])
+    input_shape_spatialnet = (parameters['width'], parameters['height'],
+                              parameters['channels'])
+    input_shape_temporalnet = (parameters['width'], parameters['height'],
+                               2*parameters['L'])
     nb_classes = parameters['nb_classes']
     imagenet_weights_path = parameters['imagenet_weights_path']
     ucf101_weights_path = parameters['ucf101_weights_path']
@@ -92,12 +117,15 @@ def two_stream_network(parameters):
     
                             
     merged_network = concatenate([spatialnet, temporalnet], axis=-1)
-    logits = Dense(nb_classes, name='logits', init='glorot_uniform')(merged_network)
+    logits = Dense(nb_classes, name='logits',
+                   init='glorot_uniform')(merged_network)
     softmax = Activation('softmax')(logits)
     model= Model(inputs=[spatial_input, temporal_input], outputs=softmax)
     
     # Load weights for each branch
-    model = load_npy_weights(model=model, name='spatialnet', weights_file=imagenet_weights_path)
-    model = load_npy_weights(model=model, name='temporalnet', weights_file=ucf101_weights_path)
+    model = load_npy_weights(model=model, name='spatialnet',
+                             weights_file=imagenet_weights_path)
+    model = load_npy_weights(model=model, name='temporalnet',
+                             weights_file=ucf101_weights_path)
     
     return model
