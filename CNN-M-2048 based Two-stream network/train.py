@@ -3,7 +3,7 @@ from numpy.random import seed
 seed(7)
 import numpy as np
 import os
-
+import time
 from keras.optimizers import Adam
 import json
 import gc
@@ -64,6 +64,7 @@ def train(test_subject, parameters):
         next_batch_val = batch_generator('val', parameters, validation_set)
         train_acc, train_loss = 0, 0
         # Training
+        train_time = time.time()
         for b in range(nb_batches_train):
             image, ofstack, label = next_batch_train.next()
             loss, accuracy = model.train_on_batch([image, ofstack], label)
@@ -72,10 +73,12 @@ def train(test_subject, parameters):
         
         losses['train'].append(float(train_loss)/float(nb_batches_train))
         accuracies['train'].append(float(train_acc)/float(nb_batches_train)) 
+        train_time = time.time() - train_time
         
         preds, gt = np.zeros((nb_inputs_val)), np.zeros((nb_inputs_val))
         val_loss = 0
         #Validation
+        val_time = time.time()
         for b in range(nb_batches_val):
             image, ofstack, label = next_batch_val.next()
             pred = model.predict([image, ofstack], batch_size=batch_size)
@@ -88,11 +91,13 @@ def train(test_subject, parameters):
         losses['val'].append(float(val_loss)/float(nb_batches_val))
         accuracies['val'].append(val_acc) 
         val_f1 = f1_score(gt, preds, average='macro')
+        val_time = time.time() - val_time
         
-        print('Epoch {} - Train Loss: {}, Train Acc: {} / Val Acc: {},'
-              'Val F1: {}'.format(
-                  e, np.mean(losses['train']), np.mean(accuracies['train']),
-                  val_acc, val_f1
+        print('Epoch {} - Train Loss: {}, Train Acc: {}, Train time: {} s |||'
+              'Val Acc: {}, Val F1: {}, Val time: {} s'.format(
+                      e, np.mean(losses['train']), 
+                      np.mean(accuracies['train']),
+                      train_time, val_acc, val_f1, val_time
                   )
               )
               
@@ -101,9 +106,6 @@ def train(test_subject, parameters):
             test_subject, parameters, metrics, True, losses, accuracies
         )
         # Save weights of the model if a better loss is found
-        plot_training_info(
-            test_subject, parameters, metrics, True, losses, accuracies
-        )
         if losses['val'] < best_loss:
             best_epoch = e
             best_loss = losses['val']
@@ -116,6 +118,7 @@ def train(test_subject, parameters):
 
     # Load best model
     model.load_weights(saved_weights_file)
+    print('Best weights loaded')
 
     # Load the test set
     test_set = load_test_image_dataset(parameters, test_subject)
@@ -127,12 +130,14 @@ def train(test_subject, parameters):
     next_batch_test = batch_generator('test', parameters, test_set)
     preds, gt = np.zeros((nb_inputs_val)), np.zeros((nb_inputs_val))
     # Test
+    test_time = time.time()
     for i in range(nb_batches_test):
         image, ofstack, label = next_batch_test.next()
         gt[b*batch_size:b*batch_size+label.shape[0]] = np.argmax(label,1)
         preds[b*batch_size:b*batch_size+pred.shape[0]] = np.argmax(pred,1)
         preds += np.argmax(pred,1)
-
+    test_time = time.time() - test_time
+    print('Time to complete the test: {} seconds'.format(test_time))
     cm = confusion_matrix(gt, preds)
     title = 'Normalized confusion matrix in test set ({} fold)'.format(
         test_subject

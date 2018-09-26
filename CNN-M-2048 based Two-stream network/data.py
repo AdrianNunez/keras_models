@@ -7,12 +7,11 @@ import glob
 from utils import get_classes
 from sklearn.model_selection import StratifiedShuffleSplit
 import cv2
-from collections import Counter
 from keras.utils import to_categorical
 import scipy.io as sio
+from scipy.misc import imresize
 
 def load_inputs(mode, test_subject, parameters, val_index=None):
-    subjects = parameters['subjects']
     data_files_folder = parameters['data_files_folder']
     images_folder = parameters['images_folder']
     of_folder = parameters['of_folder']
@@ -22,6 +21,8 @@ def load_inputs(mode, test_subject, parameters, val_index=None):
     of_mean = parameters['of_mean']
     image_mean = sio.loadmat(parameters['image_mean'])['image_mean']
     image_shape = (parameters['width'], parameters['height'])
+    augment_data = parameters['apply_data_augmentation']
+    resize_shape = parameters['dag_resize_shape']
     
     # Load the .txt where train/test partition are saved
     if mode == 'train' or mode == 'val':
@@ -111,9 +112,11 @@ def load_inputs(mode, test_subject, parameters, val_index=None):
 
             temp = []
             for i in xrange(len(frames)):        
-                img = cv2.imread(frames[i])
+                img = cv2.imread(frames[i]) - image_mean
                 # subtract the image mean (used in the pre-training)
-                temp.append(img - image_mean)
+                if augment_data: 
+                    img = imresize(img, resize_shape, interp='bilinear') 
+                temp.append(img)
             batches_images.append(temp)
             
             # Load optical flow and stack L horizontal and vertical images
@@ -140,11 +143,18 @@ def load_inputs(mode, test_subject, parameters, val_index=None):
                 if high > len(x_frames):
                     low, high = -L, len(x_frames)
                 i = 0
-                flow = np.zeros(shape=image_shape + (2*L,), dtype=np.float32)
+                if augment_data:
+                    flow = np.zeros(shape=image_shape + (2*L,), dtype=np.float32)
+                else:
+                    flow = np.zeros(shape=image_shape + (2*L,), dtype=np.float32)
                 for flow_x_file, flow_y_file in zip(
                         x_frames[low:high],y_frames[low:high]):
                     img_x = cv2.imread(flow_x_file, cv2.IMREAD_GRAYSCALE)
                     img_y = cv2.imread(flow_y_file, cv2.IMREAD_GRAYSCALE)
+                    # Resize to larger size in order to crop them later
+                    if augment_data: 
+                        img_x = imresize(img_x, resize_shape, interp='bilinear') 
+                        img_y = imresize(img_y, resize_shape, interp='bilinear') 
                     flow[:,:,2*i] = img_x
                     flow[:,:,2*i+1] = img_y
                     i += 1
@@ -191,6 +201,10 @@ def batch_generator(mode, parameters, dataset):
     nb_classes = parameters['nb_classes']
     L = parameters['L']
     batch_size = parameters['batch_size']
+    augment_data = parameters['augment_data']
+    width, height = parameters['width'], parameters['height']
+    _width, _height = parameters['dag_resize_shape']
+    evens = [n for n in range(20) if n % 2 == 0]
     
     while True:
         perm = np.random.permutation(nb_inputs)
@@ -215,13 +229,34 @@ def batch_generator(mode, parameters, dataset):
                 else:
                     inner_pos = pos_stack*L + L/2 
                     
-            # DATA AUGMENTATION GOES HERE
-           
-            batch_images.append(dataset['images'][pos][inner_pos])
-            batch_ofs.append(dataset['stacks'][pos][pos_stack])
-            batch_labels.append(
-                to_categorical(dataset['labels'][pos], nb_classes)
-            )
+            # Data augmentation
+            if mode == 'train' and augment_data:
+                # Random Cropping
+                dx = np.random.randint(0, _width-width)
+                dy = np.random.randint(0, _height-height)
+                img = dataset['images'][pos][inner_pos][
+                                dx:dx+width, dy:dy+height
+                            ]
+                stack = dataset['stacks'][pos][pos_stack][
+                                    dx:dx+width, dy:dy+height,:
+                                ]
+                # Random Mirroring
+                rand = np.random.rand(1) 
+                if rand > 0.5:
+                    img = np.fliplr(img)
+                    stack[...,evens] = 255 - stack[...,evens]
+                    
+                batch_images.append(img)
+                batch_ofs.append(stack)
+                batch_labels.append(
+                    to_categorical(dataset['labels'][pos], nb_classes)
+                )
+            else:
+                batch_images.append(dataset['images'][pos][inner_pos])
+                batch_ofs.append(dataset['stacks'][pos][pos_stack])
+                batch_labels.append(
+                    to_categorical(dataset['labels'][pos], nb_classes)
+                )
             if len(batch_images) == batch_size:
                 yield (np.asarray(batch_images), np.asarray(batch_ofs),
                        np.asarray(batch_labels))
@@ -256,13 +291,34 @@ def batch_generator(mode, parameters, dataset):
                     else:
                         inner_pos = pos_stack*L + L/2 
                         
-                # DATA AUGMENTATION GOES HERE
-                
-                batch_images.append(dataset['images'][pos][inner_pos])
-                batch_ofs.append(dataset['stacks'][pos][pos_stack])
-                batch_labels.append(
-                    to_categorical(dataset['labels'][pos], nb_classes)
-                )
+                # Data augmentation  
+                if mode == 'train' and augment_data:
+                    # Random Cropping
+                    dx = np.random.randint(0, _width-width)
+                    dy = np.random.randint(0, _height-height)
+                    img = dataset['images'][pos][inner_pos][
+                                    dx:dx+width, dy:dy+height
+                                ]
+                    stack = dataset['stacks'][pos][pos_stack][
+                                        dx:dx+width, dy:dy+height,:
+                                    ]
+                    # Random Mirroring
+                    rand = np.random.rand(1) 
+                    if rand > 0.5:
+                        img = np.fliplr(img)
+                        stack[...,evens] = 255 - stack[...,evens]
+                        
+                    batch_images.append(img)
+                    batch_ofs.append(stack)
+                    batch_labels.append(
+                        to_categorical(dataset['labels'][pos], nb_classes)
+                    )
+                else:
+                    batch_images.append(dataset['images'][pos][inner_pos])
+                    batch_ofs.append(dataset['stacks'][pos][pos_stack])
+                    batch_labels.append(
+                        to_categorical(dataset['labels'][pos], nb_classes)
+                    )
                 if len(batch_images) == batch_size:
                     yield (np.asarray(batch_images), np.asarray(batch_ofs),
                            np.asarray(batch_labels))
