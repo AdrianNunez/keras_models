@@ -145,7 +145,7 @@ def plot_confusion_matrix(cm, classes, path, normalize=False,
                  color="black")
       
     ax = plt.gca()
-    for i in range(range(width)):
+    for i in range(width):
         rect = Rectangle((-0.5+i, -0.5+i), 1, 1, fill=False,
                          sedgecolor='black', lw=0.5)
         ax.add_patch(rect)

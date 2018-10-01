@@ -1,1 +1,10 @@
 *.pyc
+.Rhistory
+gaze+_dataset/gaze_plus_of
+gaze+_dataset/gaze_plus_images
+cnn-m-2048-based-two-stream-network/plots
+cnn-m-2048-based-two-stream-network/saved_weights
+cnn-m-2048-based-two-stream-network/saved_weights/*
+cnn-m-2048-based-two-stream-network/weights_cnnm2048_imagenet.npy
+cnn-m-2048-based-two-stream-network/weights_ucf101.npy
+cnn-m-2048-based-two-stream-network/cnnm2048_mean.mat
