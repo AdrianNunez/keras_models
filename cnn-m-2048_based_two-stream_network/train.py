@@ -16,7 +16,7 @@ from utils import (get_classes, calculate_evaluation_metrics,
                    plot_training_info, plot_confusion_matrix)
 
 # Specify which GPU is used
-os.environ["CUDA_VISIBLE_DEVICES"]="0"
+os.environ["CUDA_VISIBLE_DEVICES"]="3"
 
 def train(test_subject, parameters):
     # Load parameters
@@ -135,7 +135,7 @@ def train(test_subject, parameters):
         nb_batches_test += 1
         
     next_batch_test = batch_generator('test', parameters, test_set)
-    preds, gt = np.zeros((test_set['inputs'])), np.zeros((test_set['inputs']))
+    preds, gt = np.zeros((nb_inputs_test)), np.zeros((nb_inputs_test))
     # Test
     test_time = time.time()
     for b in range(nb_inputs_test):
@@ -154,6 +154,7 @@ def train(test_subject, parameters):
     cm_path = '{}cm_{}.pdf'.format(plot_folder, test_subject)
     classes = get_classes(classes_file)
     # Save the confusion matrix
+   
     plot_confusion_matrix(
         cm, classes, cm_path, normalize=True, title=title, cmap='coolwarm',
         font_size=5

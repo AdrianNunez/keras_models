@@ -80,7 +80,6 @@ def load_npy_weights(model, name, weights_file, initialize_last_layer=False):
     # Add the Caffe weights (in .npy format) to the network
     data = np.load(weights_file).item()
     keys = data.keys()
-    print(keys)
     keys.sort()
     for key in keys:
         if not initialize_last_layer and 'fc8' in key: continue

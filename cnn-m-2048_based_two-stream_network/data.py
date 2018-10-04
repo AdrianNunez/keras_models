@@ -17,6 +17,7 @@ def load_inputs(mode, test_subject, parameters, val_index=None):
     of_folder = parameters['of_folder']
     val_size = parameters['percentage_of_train_for_validation']
     classes_file = parameters['classes_file']
+    test_evaluation_method = parameters['test_evaluation_method']
     L = parameters['L']
     of_mean = parameters['of_mean']
     image_mean = sio.loadmat(parameters['image_mean'])['image_mean']
@@ -112,11 +113,11 @@ def load_inputs(mode, test_subject, parameters, val_index=None):
                         frames.append(temp[i])
             temp = []
             indices = []
-            if mode != 'test':   
+            if test_evaluation_method != 0:   
                 for i in xrange(len(frames)):        
                     img = cv2.imread(frames[i]) - image_mean
                     # subtract the image mean (used in the pre-training)
-                    if (mode == 'train' and augment_data): 
+                    if mode == 'train' and augment_data: 
                         img = imresize(img, (_width, _height), interp='bilinear') 
                     temp.append(img)
             else:
@@ -147,13 +148,13 @@ def load_inputs(mode, test_subject, parameters, val_index=None):
             if rest > 0:
                 add = 1
             temp = []
-            if mode != 'test':
+            if test_evaluation_method != 0: 
                 for r in xrange((len(x_frames) // L) + add):        
                     low, high = r*L, (r+1)*L
                     if high > len(x_frames):
                         low, high = -L, len(x_frames)
                     i = 0
-                    if (mode == 'train' and augment_data) or mode == 'test':
+                    if mode == 'train' and augment_data:
                         flow = np.zeros(shape=(_width, _height, 2*L,),
                                         dtype=np.float32)
                     else:
@@ -164,7 +165,7 @@ def load_inputs(mode, test_subject, parameters, val_index=None):
                         img_x = cv2.imread(flow_x_file, cv2.IMREAD_GRAYSCALE)
                         img_y = cv2.imread(flow_y_file, cv2.IMREAD_GRAYSCALE)
                         # Resize to larger size in order to crop them later
-                        if (mode == 'train' and augment_data) or mode == 'test': 
+                        if mode == 'train' and augment_data: 
                             img_x = imresize(img_x, (_width, _height),
                                              interp='bilinear') 
                             img_y = imresize(img_y, (_width, _height),
@@ -174,6 +175,7 @@ def load_inputs(mode, test_subject, parameters, val_index=None):
                         i += 1
                     # Subtract the Optical Flow mean (used in the pre-training)
                     temp.append(flow - of_mean) 
+                    nb_videos += 1   
                 assert len(temp) == ((len(x_frames) // L)+add)
             else:
                 for i in indices: 
@@ -229,8 +231,41 @@ def load_test_image_dataset(parameters, test_subject):
         len(test_set['images']), len(test_set['labels']))
     )   
     return test_set
+    
+# This function was done by @rubensancor
+def load_one_test_image(parameters, test_subject):
+    data_files_folder = parameters['data_files_folder']
+    images_folder = parameters['images_folder']
+    of_folder = parameters['of_folder']
+    L = parameters['L']
+    of_mean = parameters['of_mean']
+    image_mean = sio.loadmat(parameters['image_mean'])['image_mean']
+    image_shape = (parameters['width'], parameters['height'])
+    
+    data_file = data_files_folder + '/test_{}.txt'.format(test_subject)
+    with open(data_file, "r") as f:
+        content = f.readlines()
+        path = content[0]
+        folder, label = path.strip().split(' ')
+    
+    img = cv2.imread(glob.glob(images_folder + folder + "/frame*")[5]) - image_mean
+    
+    of_path_x = glob.glob(of_folder + folder + "/flow_x*")[:10]
+    of_path_y = glob.glob(of_folder + folder + "/flow_y*")[:10]
+    i = 0
+    flow = np.zeros(shape=image_shape + (2*L,), dtype=np.float32)
+    for flow_x_file, flow_y_file in zip( of_path_x, of_path_y):
+        img_x = cv2.imread(flow_x_file, cv2.IMREAD_GRAYSCALE)
+        img_y = cv2.imread(flow_y_file, cv2.IMREAD_GRAYSCALE)
+        flow[:,:,2*i] = img_x
+        flow[:,:,2*i+1] = img_y
+        i += 1
+    of = flow - of_mean
+    
+    return img, of, label
 
 def batch_generator(mode, parameters, dataset):
+    test_evaluation_method = parameters['test_evaluation_method']
     nb_classes = parameters['nb_classes']
     L = parameters['L']
     batch_size = parameters['batch_size']
@@ -243,37 +278,62 @@ def batch_generator(mode, parameters, dataset):
     while True:
         if mode == 'test':
             nb_inputs = dataset['inputs']
-            for i in xrange(len(dataset['images'])):
-                batch_images, batch_ofs = [], []
-                for j in range(len(dataset['images'][i])):
-                    crops = [[0,width,0,height],
-                             [0,width,height_dif,height_dif+height],
-                             [width_dif, width_dif+width,
-                              height_dif,height_dif+height],
-                             [width_dif,width_dif+width,0,height],
-                             [width_dif/2,width_dif/2+width,
-                              height_dif/2,height_dif/2+height]
-                            ]
-                    for crop in crops:
-                        img = dataset['images'][i][j][
-                                            crop[0]:crop[1], crop[2]:crop[3],:
-                                         ]
-                        stack = dataset['stacks'][i][j][
-                                            crop[0]:crop[1], crop[2]:crop[3],:
-                                        ]
-                        for mirroring in [False, True]:
-                            if mirroring:
-                                img = np.fliplr(img)
-                                stack[...,evens] = 255 - stack[...,evens]
-                            batch_images.append(img)
-                            batch_ofs.append(stack)
-
-                yield (np.asarray(batch_images),
-                       np.asarray(batch_ofs), 
-                       np.asarray(
-                           to_categorical(dataset['labels'][i], nb_classes)
-                           )
-                      )
+            # TEST METHOD 1: Get 25 images + optical flow stacks,
+            # crop 4 corneres and center and get their mirrored version.
+            # Majority voting with the 10*25 inputs obtained to classify the 
+            # video
+            if test_evaluation_method == 0:
+                for i in xrange(len(dataset['images'])):
+                    batch_images, batch_ofs = [], []
+                    for j in range(len(dataset['images'][i])):
+                        crops = [[0,width,0,height],
+                                 [0,width,height_dif,height_dif+height],
+                                 [width_dif, width_dif+width,
+                                  height_dif,height_dif+height],
+                                 [width_dif,width_dif+width,0,height],
+                                 [width_dif/2,width_dif/2+width,
+                                  height_dif/2,height_dif/2+height]
+                                ]
+                        for crop in crops:
+                            img = dataset['images'][i][j][
+                                                crop[0]:crop[1], crop[2]:crop[3],:
+                                             ]
+                            stack = dataset['stacks'][i][j][
+                                                crop[0]:crop[1], crop[2]:crop[3],:
+                                            ]
+                            for mirroring in [False, True]:
+                                if mirroring:
+                                    img = np.fliplr(img)
+                                    stack[...,evens] = 255 - stack[...,evens]
+                                batch_images.append(img)
+                                batch_ofs.append(stack)
+    
+                    yield (np.asarray(batch_images),
+                           np.asarray(batch_ofs), 
+                           np.asarray(
+                               to_categorical(dataset['labels'][i], nb_classes)
+                               )
+                          )
+            # TEST METHOD 2: Get all the inputs of the video and do
+            # majority voting with all of them
+            elif test_evaluation_method == 1:
+                for i in xrange(len(dataset['stacks'])):
+                    batch_images, batch_ofs = [], []
+                    for j in range(len(dataset['stacks'][i])):                        
+                        if j*L+L > len(dataset['images'][i]):
+                            pos_image = -(L/2)
+                        else:
+                            pos_image = j*L + L/2 
+                        #print(len(dataset['stacks'][i]), len(dataset['images'][i]),
+                        #      j, pos_image)
+                        batch_images.append(dataset['images'][i][pos_image])
+                        batch_ofs.append(dataset['stacks'][i][j])
+                    yield (np.asarray(batch_images),
+                           np.asarray(batch_ofs), 
+                           np.asarray(
+                               to_categorical(dataset['labels'][i], nb_classes)
+                               )
+                          )
         # Train and val
         else:
             nb_inputs = dataset['inputs_per_video'][-1]
